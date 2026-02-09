@@ -1,0 +1,305 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using AccessWatchLite.Application.Sql;
+using AccessWatchLite.Domain;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace AccessWatchLite.Worker.Converters;
+
+public sealed class SimLoaderWorker : BackgroundService
+{
+    private const string ContainerName = "sim";
+    private const string LoaderPrefix = "loader/";
+    private const string LogsPrefix = "logs/";
+    private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(20);
+
+    private readonly BlobContainerClient _container;
+    private readonly ISimEventRepository _repository;
+    private readonly ILogger<SimLoaderWorker> _logger;
+
+    public SimLoaderWorker(BlobServiceClient blobServiceClient, ISimEventRepository repository, ILogger<SimLoaderWorker> logger)
+    {
+        _container = blobServiceClient.GetBlobContainerClient(ContainerName);
+        _repository = repository;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await ProcessLoaderAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing loader blobs.");
+            }
+
+            await Task.Delay(PollDelay, stoppingToken);
+        }
+    }
+
+    private async Task ProcessLoaderAsync(CancellationToken ct)
+    {
+        await foreach (var blobItem in _container.GetBlobsAsync(prefix: LoaderPrefix, cancellationToken: ct))
+        {
+            if (blobItem.Metadata.TryGetValue("processed", out var processedValue) && string.Equals(processedValue, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var blobClient = _container.GetBlobClient(blobItem.Name);
+            var logClient = _container.GetBlobClient(GetLogName(blobItem.Name));
+            if (await logClient.ExistsAsync(ct))
+            {
+                continue;
+            }
+
+            await ProcessBlobAsync(blobClient, ct);
+        }
+    }
+
+    private async Task ProcessBlobAsync(BlobClient blobClient, CancellationToken ct)
+    {
+        var logBuilder = new StringBuilder();
+        var inserted = 0;
+        var errors = 0;
+        var lineNumber = 0;
+
+        Log(logBuilder, $"Inicio de transferencia a BD: {blobClient.Name}");
+
+        await _repository.ClearAsync(ct);
+        Log(logBuilder, "Tabla sim_Events limpiada.");
+
+        var download = await blobClient.DownloadStreamingAsync(cancellationToken: ct);
+        await using var stream = download.Value.Content;
+        using var reader = new StreamReader(stream);
+
+        var headerLine = await reader.ReadLineAsync(ct);
+        if (string.IsNullOrWhiteSpace(headerLine))
+        {
+            Log(logBuilder, "ERROR: Archivo sin cabecera.");
+            await WriteLogAsync(blobClient.Name, logBuilder.ToString(), ct);
+            await MarkProcessedAsync(blobClient, ct);
+            return;
+        }
+
+        var headers = ParseCsvLine(headerLine);
+        var headerLookup = BuildHeaderLookup(headers);
+
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync(ct);
+            lineNumber++;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                var values = ParseCsvLine(line);
+                var accessEvent = MapAccessEvent(values, headerLookup);
+                await _repository.InsertAsync(accessEvent, ct);
+                inserted++;
+            }
+            catch (Exception ex)
+            {
+                errors++;
+                Log(logBuilder, $"ERROR fila {lineNumber}: {ex.Message}");
+            }
+        }
+
+        Log(logBuilder, $"Filas insertadas: {inserted}");
+        Log(logBuilder, $"Errores: {errors}");
+        Log(logBuilder, errors == 0
+            ? "Fin de transferencia: OK"
+            : "Fin de transferencia: con errores");
+
+        await WriteLogAsync(blobClient.Name, logBuilder.ToString(), ct);
+        if (errors == 0)
+        {
+            await blobClient.DeleteIfExistsAsync(cancellationToken: ct);
+        }
+        else
+        {
+            await MarkProcessedAsync(blobClient, ct);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, int> BuildHeaderLookup(IReadOnlyList<string> headers)
+    {
+        var lookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < headers.Count; i++)
+        {
+            if (!lookup.ContainsKey(headers[i]))
+            {
+                lookup[headers[i]] = i;
+            }
+        }
+
+        return lookup;
+    }
+
+    private static AccessEvent MapAccessEvent(IReadOnlyList<string> values, IReadOnlyDictionary<string, int> headers)
+    {
+        string? GetValue(string header)
+        {
+            return headers.TryGetValue(header, out var index) && index < values.Count
+                ? values[index]
+                : null;
+        }
+
+        var location = GetValue("Ubicación");
+        var (city, country) = ParseLocation(location);
+
+        var accessEvent = new AccessEvent
+        {
+            Id = Guid.NewGuid(),
+            EventId = Anonymize(GetValue("Id. de solicitud")) ?? string.Empty,
+            UserId = Anonymize(GetValue("Id. de usuario")),
+            UserPrincipalName = Anonymize(GetValue("Nombre de usuario")),
+            TimestampUtc = ParseDateTime(GetValue("Fecha (UTC)")),
+            IpAddress = GetValue("Dirección IP") ?? string.Empty,
+            Country = country,
+            City = city,
+            DeviceId = Anonymize(GetValue("Id. de dispositivo")),
+            DeviceName = GetValue("Explorador"),
+            ClientApp = GetValue("Aplicación cliente"),
+            AuthMethod = GetValue("Protocolo de autenticación"),
+            Result = GetValue("Estado"),
+            RiskLevel = null,
+            RiskEventTypesJson = null,
+            RawJson = BuildRawJson(values, headers)
+        };
+
+        return accessEvent;
+    }
+
+    private static DateTime ParseDateTime(string? value)
+    {
+        if (DateTime.TryParse(value, out var parsed))
+        {
+            return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+        }
+
+        throw new FormatException("Fecha (UTC) inválida.");
+    }
+
+    private static (string? city, string? country) ParseLocation(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return (null, null);
+        }
+
+        var parts = location.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return (null, null);
+        }
+
+        var city = parts[0];
+        var country = parts.Length >= 2 ? parts[^1] : null;
+        return (city, country);
+    }
+
+    private static string BuildRawJson(IReadOnlyList<string> values, IReadOnlyDictionary<string, int> headers)
+    {
+        var data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var header in headers)
+        {
+            var index = headers[header.Key];
+            data[header.Key] = index < values.Count ? values[index] : null;
+        }
+
+        return JsonSerializer.Serialize(data);
+    }
+
+    private static string? Anonymize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var salt = "AccessWatchLite";
+        using var sha256 = SHA256.Create();
+        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes($"{salt}:{value}"));
+        return Convert.ToHexString(bytes);
+    }
+
+    private static List<string> ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        for (var i = 0; i < line.Length; i++)
+        {
+            var ch = line[i];
+            if (ch == '"')
+            {
+                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    current.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+
+                continue;
+            }
+
+            if (ch == ';' && !inQuotes)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        result.Add(current.ToString());
+        return result;
+    }
+
+    private async Task WriteLogAsync(string blobName, string content, CancellationToken ct)
+    {
+        var logName = GetLogName(blobName);
+        var logClient = _container.GetBlobClient(logName);
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+        await logClient.UploadAsync(stream, overwrite: true, cancellationToken: ct);
+    }
+
+    private static string GetLogName(string blobName)
+    {
+        var fileName = Path.GetFileName(blobName);
+        return $"{LogsPrefix}load-{fileName}.log";
+    }
+
+    private static async Task MarkProcessedAsync(BlobClient blobClient, CancellationToken ct)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["processed"] = "true",
+            ["processedAt"] = DateTime.UtcNow.ToString("O")
+        };
+
+        await blobClient.SetMetadataAsync(metadata, cancellationToken: ct);
+    }
+
+    private static void Log(StringBuilder builder, string message)
+    {
+        builder.AppendLine($"[{DateTime.UtcNow:O}] {message}");
+    }
+}

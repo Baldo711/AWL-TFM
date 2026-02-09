@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="AccessWatchLite.Application/AccessWatchLite.Application.csproj" />
+  <Project Path="AccessWatchLite.Domain/AccessWatchLite.Domain.csproj" />
+  <Project Path="AccessWatchLite.Functions/AccessWatchLite.Functions.csproj" />
+  <Project Path="AccessWatchLite.Infrastructure/AccessWatchLite.Infrastructure.csproj" />
+  <Project Path="AccessWatchLite.UI/AccessWatchLite.UI.csproj" />
+  <Project Path="AccessWatchLite.Worker.Detection/AccessWatchLite.Worker.Detection.csproj" />
+  <Project Path="AccessWatchLite.Worker.Ingestion/AccessWatchLite.Worker.Ingestion.csproj" />
+  <Project Path="AccessWatchLite.Worker.Response/AccessWatchLite.Worker.Response.csproj" />
+</Solution>

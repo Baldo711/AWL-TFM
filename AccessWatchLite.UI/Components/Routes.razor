@@ -1,0 +1,22 @@
+﻿<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    <RedirectToLogin />
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Página no encontrada</PageTitle>
+            <LayoutView Layout="typeof(Layout.MainLayout)">
+                <div class="alert alert-warning m-4">
+                    <h4>🔍 Página no encontrada</h4>
+                    <p>La ruta solicitada no existe.</p>
+                    <a href="/dashboard" class="btn btn-primary">Volver al Dashboard</a>
+                </div>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

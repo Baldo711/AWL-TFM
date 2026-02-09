@@ -1,0 +1,117 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
+<div class="top-navbar">
+    <div class="top-navbar-content">
+        <div class="top-navbar-left">
+            <span class="app-title">
+                <i class="bi bi-shield-check"></i> 
+                <span>AccessWatch</span>
+                <span class="lite-badge">Lite</span>
+            </span>
+        </div>
+        
+        <div class="top-navbar-right">
+            <AuthorizeView>
+                <Authorized>
+                    <div class="user-info">
+                        <i class="bi bi-person-circle user-icon"></i>
+                        <span class="user-name">@context.User.Identity?.Name</span>
+                        <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-outline-light btn-sm ms-2">
+                            <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                        </a>
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="MicrosoftIdentity/Account/SignIn" class="btn btn-primary btn-sm">
+                        <i class="bi bi-box-arrow-in-right"></i> Iniciar sesión
+                    </a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+</div>
+
+<style>
+    .top-navbar {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        position: sticky;
+        top: 0;
+        z-index: 1030;
+    }
+
+    .top-navbar-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        max-width: 100%;
+    }
+
+    .top-navbar-left {
+        display: flex;
+        align-items: center;
+    }
+
+    .app-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .app-title i {
+        font-size: 1.8rem;
+    }
+
+    .lite-badge {
+        display: inline-block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.25);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        margin-left: 0.5rem;
+        vertical-align: middle;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .top-navbar-right {
+        display: flex;
+        align-items: center;
+    }
+
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: rgba(255, 255, 255, 0.15);
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+    }
+
+    .user-icon {
+        font-size: 1.5rem;
+    }
+
+    .user-name {
+        font-weight: 500;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    @@media (max-width: 768px) {
+        .app-title {
+            font-size: 1.2rem;
+        }
+        
+        .user-name {
+            display: none;
+        }
+    }
+</style>

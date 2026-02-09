@@ -1,0 +1,17 @@
+﻿@page "/"
+@inject NavigationManager Navigation
+
+<PageTitle>Access Watch (Lite)</PageTitle>
+
+@code {
+    private bool hasNavigated = false;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && !hasNavigated)
+        {
+            hasNavigated = true;
+            Navigation.NavigateTo("/dashboard", forceLoad: false);
+        }
+    }
+}

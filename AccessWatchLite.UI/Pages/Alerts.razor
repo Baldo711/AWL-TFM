@@ -1,0 +1,461 @@
+@page "/alerts"
+@rendermode InteractiveServer
+@using AccessWatchLite.Application.Services
+@using AccessWatchLite.Application.Sql
+@using AccessWatchLite.Domain
+@inject IAlertService AlertService
+@inject IResponseService ResponseService
+@inject NavigationManager Navigation
+
+<PageTitle>Alertas de Seguridad</PageTitle>
+
+<div class="alerts-page">
+    <div class="page-header">
+        <h1><i class="bi bi-exclamation-triangle-fill"></i> Alertas de Seguridad</h1>
+        <p class="text-muted">Gestión y análisis de incidentes detectados</p>
+    </div>
+
+    <!-- Filtros -->
+    <div class="filters-section">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Severidad</label>
+                <select class="form-select" @bind="_selectedSeverity" @bind:after="LoadAlertsAsync">
+                    <option value="">Todas</option>
+                    <option value="HIGH">Alta</option>
+                    <option value="MEDIUM">Media</option>
+                    <option value="LOW">Baja</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Estado</label>
+                <select class="form-select" @bind="_selectedStatus" @bind:after="LoadAlertsAsync">
+                    <option value="">Todos</option>
+                    <option value="New">Nuevo</option>
+                    <option value="Investigating">Investigando</option>
+                    <option value="Resolved">Resuelto</option>
+                    <option value="FalsePositive">Falso Positivo</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Modo</label>
+                <select class="form-select" @bind="_selectedMode" @bind:after="LoadAlertsAsync">
+                    <option value="real">Real</option>
+                    <option value="simulation">Simulación</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button class="btn btn-primary w-100" @onclick="LoadAlertsAsync">
+                    <i class="bi bi-arrow-clockwise"></i> Actualizar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <p class="mt-2">Cargando alertas...</p>
+        </div>
+    }
+    else if (_alerts == null || !_alerts.Any())
+    {
+        <div class="alert alert-info mt-4">
+            <i class="bi bi-info-circle"></i> No hay alertas que coincidan con los filtros seleccionados.
+        </div>
+    }
+    else
+    {
+        <!-- Lista de alertas -->
+        <div class="alerts-list mt-4">
+            @foreach (var alert in _alerts)
+            {
+                <div class="alert-card @GetAlertCardClass(alert.Severity)" @onclick="() => SelectAlert(alert)">
+                    <!-- FILA 1: Título + Badges + Fecha -->
+                    <div class="alert-card-header">
+                        <div class="alert-title-row">
+                            <h5 class="alert-title mb-0">@alert.Title</h5>
+                            <div class="alert-badges">
+                                <span class="badge @GetSeverityBadgeClass(alert.Severity)">
+                                    @alert.Severity
+                                </span>
+                                <span class="badge bg-secondary">@alert.Status</span>
+                                @if (alert.IsSimulation)
+                                {
+                                    <span class="badge bg-info">
+                                        <i class="bi bi-box-seam"></i> SIM
+                                    </span>
+                                }
+                            </div>
+                            <div class="alert-date">
+                                <i class="bi bi-clock"></i> @alert.DetectedAt.ToString("dd/MM/yyyy HH:mm")
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- FILA 2: Información del evento -->
+                    <div class="alert-card-body">
+                        <div class="alert-info">
+                            <div class="info-item">
+                                <i class="bi bi-person-fill"></i> <strong>Usuario:</strong> @alert.UserId
+                            </div>
+                            <div class="info-item">
+                                <i class="bi bi-geo-alt-fill"></i> <strong>Ubicación:</strong> @alert.City, @alert.Country
+                            </div>
+                            <div class="info-item">
+                                <i class="bi bi-router-fill"></i> <strong>IP:</strong> @alert.IpAddress
+                            </div>
+                            <div class="info-item">
+                                <i class="bi bi-speedometer"></i> <strong>Risk Score:</strong> @alert.RiskScore.ToString("F1")
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Modal de detalles -->
+    @if (_selectedAlert != null)
+    {
+        <div class="modal-backdrop show" @onclick="CloseModal"></div>
+        <div class="modal show d-block" tabindex="-1">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header @GetModalHeaderClass(_selectedAlert.Severity)">
+                        <h5 class="modal-title">
+                            <i class="bi bi-exclamation-triangle-fill"></i> Detalle de Alerta
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Información general -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6 class="fw-bold">Información General</h6>
+                                <table class="table table-sm">
+                                    <tr><td><strong>ID:</strong></td><td>@_selectedAlert.Id</td></tr>
+                                    <tr><td><strong>Usuario:</strong></td><td>@_selectedAlert.UserId</td></tr>
+                                    <tr><td><strong>Severidad:</strong></td><td><span class="badge @GetSeverityBadgeClass(_selectedAlert.Severity)">@_selectedAlert.Severity</span></td></tr>
+                                    <tr><td><strong>Estado:</strong></td><td><span class="badge bg-secondary">@_selectedAlert.Status</span></td></tr>
+                                    <tr><td><strong>Risk Score:</strong></td><td>@_selectedAlert.RiskScore.ToString("F2")</td></tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="fw-bold">Contexto del Evento</h6>
+                                <table class="table table-sm">
+                                    <tr><td><strong>Fecha:</strong></td><td>@_selectedAlert.DetectedAt.ToString("dd/MM/yyyy HH:mm:ss")</td></tr>
+                                    <tr><td><strong>Ubicación:</strong></td><td>@_selectedAlert.City, @_selectedAlert.Country</td></tr>
+                                    <tr><td><strong>IP:</strong></td><td>@_selectedAlert.IpAddress</td></tr>
+                                    <tr><td><strong>Dispositivo:</strong></td><td>@_selectedAlert.DeviceId</td></tr>
+                                    <tr><td><strong>Simulación:</strong></td><td>@(_selectedAlert.IsSimulation ? "Sí" : "No")</td></tr>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Señales detectadas -->
+                        @if (!string.IsNullOrEmpty(_selectedAlert.DetectedSignals))
+                        {
+                            <div class="mb-4">
+                                <h6 class="fw-bold">Señales Detectadas</h6>
+                                <pre class="bg-light p-3 rounded">@_selectedAlert.DetectedSignals</pre>
+                            </div>
+                        }
+
+                        <!-- Acciones de respuesta ejecutadas -->
+                        @if (_responseActions != null && _responseActions.Any())
+                        {
+                            <div class="mb-4">
+                                <h6 class="fw-bold">Acciones de Respuesta</h6>
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Tipo</th>
+                                            <th>Estado</th>
+                                            <th>Ejecutado</th>
+                                            <th>Resultado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var action in _responseActions)
+                                        {
+                                            <tr>
+                                                <td><span class="badge bg-info">@action.ActionType</span></td>
+                                                <td><span class="badge @GetActionStatusBadge(action.ActionStatus)">@action.ActionStatus</span></td>
+                                                <td>@(action.ExecutedAt?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
+                                                <td>@(action.Result ?? action.ErrorMessage ?? "-")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+
+                        <!-- Descripción -->
+                        @if (!string.IsNullOrEmpty(_selectedAlert.Description))
+                        {
+                            <div class="mb-4">
+                                <h6 class="fw-bold">Descripción</h6>
+                                <p>@_selectedAlert.Description</p>
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        @if (_selectedAlert.Status == "New")
+                        {
+                            <button class="btn btn-warning" @onclick="@(() => UpdateStatusAsync(_selectedAlert.Id, "Investigating"))">
+                                <i class="bi bi-search"></i> Marcar como Investigando
+                            </button>
+                        }
+                        @if (_selectedAlert.Status != "Resolved")
+                        {
+                            <button class="btn btn-success" @onclick="@(() => UpdateStatusAsync(_selectedAlert.Id, "Resolved"))">
+                                <i class="bi bi-check-circle"></i> Resolver
+                            </button>
+                        }
+                        <button class="btn btn-secondary" @onclick="@(() => UpdateStatusAsync(_selectedAlert.Id, "FalsePositive"))">
+                            <i class="bi bi-x-circle"></i> Falso Positivo
+                        </button>
+                        <button class="btn btn-outline-secondary" @onclick="CloseModal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .alerts-page {
+        padding: 2rem 0;
+    }
+
+    .page-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 0.5rem;
+    }
+
+    .filters-section {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-bottom: 2rem;
+    }
+
+    .alerts-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .alert-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border-left: 5px solid #ccc;
+    }
+
+    .alert-card:hover {
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        transform: translateY(-2px);
+    }
+
+    .alert-card.severity-high {
+        border-left-color: #dc3545;
+    }
+
+    .alert-card.severity-medium {
+        border-left-color: #ffc107;
+    }
+
+    .alert-card.severity-low {
+        border-left-color: #28a745;
+    }
+
+    .alert-card-header {
+        margin-bottom: 1rem;
+    }
+
+    .alert-title-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .alert-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #333;
+        margin: 0;
+        flex-shrink: 0;
+    }
+
+    .alert-badges {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .alert-badges .badge {
+        font-size: 0.85rem;
+        padding: 0.35rem 0.65rem;
+        font-weight: 600;
+    }
+
+    .alert-badges .badge i {
+        margin-right: 0.25rem;
+    }
+
+    .alert-date {
+        margin-left: auto;
+        color: #6c757d;
+        font-size: 0.9rem;
+        white-space: nowrap;
+    }
+
+    .alert-card-body {
+        padding-top: 0.75rem;
+        border-top: 1px solid #dee2e6;
+    }
+
+    .alert-info {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .info-item {
+        font-size: 0.95rem;
+        color: #555;
+    }
+
+    .info-item i {
+        color: #667eea;
+        margin-right: 0.25rem;
+    }
+
+    .modal-backdrop.show {
+        opacity: 0.5;
+    }
+
+    .modal.show {
+        display: block;
+    }
+
+    .modal-header.bg-danger {
+        background-color: #dc3545 !important;
+        color: white;
+    }
+
+    .modal-header.bg-warning {
+        background-color: #ffc107 !important;
+        color: #212529;
+    }
+
+    .modal-header.bg-success {
+        background-color: #28a745 !important;
+        color: white;
+    }
+</style>
+
+@code {
+private List<Alert>? _alerts;
+private Alert? _selectedAlert;
+private List<ResponseAction>? _responseActions;
+private bool _loading = true;
+    
+private string _selectedSeverity = "";
+private string _selectedStatus = "";
+private string _selectedMode = "real";
+
+protected override async Task OnInitializedAsync()
+{
+    await LoadAlertsAsync();
+}
+
+private async Task LoadAlertsAsync()
+{
+    _loading = true;
+    StateHasChanged();
+
+    try
+    {
+        bool isSimulation = _selectedMode == "simulation";
+        var allAlerts = await AlertService.GetRecentAlertsAsync(isSimulation, 100);
+
+        _alerts = allAlerts
+            .Where(a => string.IsNullOrEmpty(_selectedSeverity) || a.Severity == _selectedSeverity)
+            .Where(a => string.IsNullOrEmpty(_selectedStatus) || a.Status == _selectedStatus)
+            .OrderByDescending(a => a.DetectedAt)
+            .ToList();
+    }
+    finally
+    {
+        _loading = false;
+        StateHasChanged();
+    }
+}
+
+    private async Task SelectAlert(Alert alert)
+    {
+        _selectedAlert = alert;
+        _responseActions = await ResponseService.GetActionsForAlertAsync(alert.Id);
+        StateHasChanged();
+    }
+
+    private void CloseModal()
+    {
+        _selectedAlert = null;
+        _responseActions = null;
+    }
+
+    private async Task UpdateStatusAsync(Guid alertId, string newStatus)
+    {
+        await AlertService.UpdateAlertStatusAsync(alertId, newStatus);
+        await LoadAlertsAsync();
+        CloseModal();
+    }
+
+    private string GetSeverityBadgeClass(string severity) => severity switch
+    {
+        "HIGH" => "bg-danger",
+        "MEDIUM" => "bg-warning text-dark",
+        "LOW" => "bg-success",
+        _ => "bg-secondary"
+    };
+
+    private string GetSeverityIcon(string severity) => severity switch
+    {
+        "HIGH" => "bi-exclamation-triangle-fill",
+        "MEDIUM" => "bi-exclamation-circle-fill",
+        "LOW" => "bi-info-circle-fill",
+        _ => "bi-question-circle-fill"
+    };
+
+    private string GetAlertCardClass(string severity) => $"severity-{severity.ToLower()}";
+
+    private string GetModalHeaderClass(string severity) => severity switch
+    {
+        "HIGH" => "bg-danger text-white",
+        "MEDIUM" => "bg-warning text-dark",
+        "LOW" => "bg-success text-white",
+        _ => "bg-secondary text-white"
+    };
+
+    private string GetActionStatusBadge(string status) => status switch
+    {
+        "Executed" => "bg-success",
+        "Failed" => "bg-danger",
+        "Pending" => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+}

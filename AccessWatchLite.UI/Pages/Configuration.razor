@@ -1,0 +1,361 @@
+@page "/configuration"
+@rendermode InteractiveServer
+@using AccessWatchLite.Application.Detection
+@using Microsoft.JSInterop
+@inject DetectionConfig Config
+@inject IJSRuntime JS
+
+<PageTitle>Configuración del Motor de Detección</PageTitle>
+
+<div class="configuration-page">
+    <div class="page-header">
+        <h1><i class="bi bi-gear-fill"></i> Configuración del Motor de Detección</h1>
+        <p class="text-muted">Ajusta los umbrales y pesos de las señales de detección</p>
+    </div>
+
+    <div class="config-container">
+        <!-- Umbrales de Severidad -->
+        <div class="config-section">
+            <h4 class="section-title">
+                <i class="bi bi-speedometer"></i> Umbrales de Severidad
+            </h4>
+            <p class="text-muted small">Define los umbrales de RiskScore para clasificar alertas</p>
+            
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <span class="badge bg-danger">ALTA</span> Umbral Mínimo
+                    </label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" @bind="Config.HighSeverityThreshold" 
+                               min="0" max="100" step="1" />
+                        <span class="input-group-text">/ 100</span>
+                    </div>
+                    <small class="text-muted">RiskScore ? @Config.HighSeverityThreshold se considera ALTA severidad</small>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <span class="badge bg-warning text-dark">MEDIA</span> Umbral Mínimo
+                    </label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" @bind="Config.MediumSeverityThreshold" 
+                               min="0" max="100" step="1" />
+                        <span class="input-group-text">/ 100</span>
+                    </div>
+                    <small class="text-muted">RiskScore ? @Config.MediumSeverityThreshold se considera MEDIA severidad</small>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <span class="badge bg-success">BAJA</span> Umbral Mínimo
+                    </label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" @bind="Config.MinimumAlertThreshold" 
+                               min="0" max="100" step="1" />
+                        <span class="input-group-text">/ 100</span>
+                    </div>
+                    <small class="text-muted">RiskScore ? @Config.MinimumAlertThreshold genera alerta</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuración de Perfil de Usuario -->
+        <div class="config-section">
+            <h4 class="section-title">
+                <i class="bi bi-person-badge"></i> Perfil de Usuario
+            </h4>
+            <p class="text-muted small">Parámetros para construir el perfil de comportamiento</p>
+            
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Período de Baseline (días)</label>
+                    <input type="number" class="form-control" @bind="Config.ProfileLookbackDays" 
+                           min="7" max="90" step="1" />
+                    <small class="text-muted">Días hacia atrás para analizar comportamiento histórico</small>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Accesos Mínimos para Perfil</label>
+                    <input type="number" class="form-control" @bind="Config.MinimumAccessesForProfile" 
+                           min="5" max="50" step="1" />
+                    <small class="text-muted">Número mínimo de accesos para construir perfil confiable</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Umbrales por Señal -->
+        <div class="config-section">
+            <h4 class="section-title">
+                <i class="bi bi-clipboard-data"></i> Umbrales por Señal
+            </h4>
+            <p class="text-muted small">Sensibilidad de cada señal de detección (0.0 = menos sensible, 1.0 = más sensible)</p>
+            
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-geo-alt-fill text-primary"></i> Ubicación Inusual
+                    </label>
+                    <input type="range" class="form-range" @bind="Config.UnusualLocationThreshold" 
+                           min="0" max="1" step="0.1" />
+                    <div class="d-flex justify-content-between">
+                        <small>0.0</small>
+                        <strong>@Config.UnusualLocationThreshold.ToString("F1")</strong>
+                        <small>1.0</small>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-router-fill text-info"></i> Cambio de IP
+                    </label>
+                    <input type="range" class="form-range" @bind="Config.IpChangeThreshold" 
+                           min="0" max="1" step="0.1" />
+                    <div class="d-flex justify-content-between">
+                        <small>0.0</small>
+                        <strong>@Config.IpChangeThreshold.ToString("F1")</strong>
+                        <small>1.0</small>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-phone-fill text-warning"></i> Dispositivo Desconocido
+                    </label>
+                    <input type="range" class="form-range" @bind="Config.UnknownDeviceThreshold" 
+                           min="0" max="1" step="0.1" />
+                    <div class="d-flex justify-content-between">
+                        <small>0.0</small>
+                        <strong>@Config.UnknownDeviceThreshold.ToString("F1")</strong>
+                        <small>1.0</small>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-clock-fill text-success"></i> Horario Atípico
+                    </label>
+                    <input type="range" class="form-range" @bind="Config.AtypicalTimeThreshold" 
+                           min="0" max="1" step="0.1" />
+                    <div class="d-flex justify-content-between">
+                        <small>0.0</small>
+                        <strong>@Config.AtypicalTimeThreshold.ToString("F1")</strong>
+                        <small>1.0</small>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-shield-fill-exclamation text-danger"></i> Autenticación Débil
+                    </label>
+                    <input type="range" class="form-range" @bind="Config.WeakAuthThreshold" 
+                           min="0" max="1" step="0.1" />
+                    <div class="d-flex justify-content-between">
+                        <small>0.0</small>
+                        <strong>@Config.WeakAuthThreshold.ToString("F1")</strong>
+                        <small>1.0</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Intentos Fallidos -->
+        <div class="config-section">
+            <h4 class="section-title">
+                <i class="bi bi-x-circle-fill"></i> Intentos Fallidos
+            </h4>
+            <p class="text-muted small">Configuración para detectar ataques de fuerza bruta</p>
+            
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Número de Intentos Fallidos</label>
+                    <input type="number" class="form-control" @bind="Config.FailedAttemptsCount" 
+                           min="2" max="10" step="1" />
+                    <small class="text-muted">Intentos fallidos consecutivos para generar alerta</small>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Ventana de Tiempo (minutos)</label>
+                    <input type="number" class="form-control" @bind="Config.FailedAttemptsWindowMinutes" 
+                           min="5" max="60" step="5" />
+                    <small class="text-muted">Período de tiempo para contar intentos fallidos</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pesos de Señales -->
+        <div class="config-section">
+            <h4 class="section-title">
+                <i class="bi bi-bar-chart-fill"></i> Pesos de Señales
+            </h4>
+            <p class="text-muted small">Importancia relativa de cada señal en el cálculo de RiskScore (total debe ? 1.0)</p>
+            
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Ubicación Inusual</label>
+                    <input type="number" class="form-control" @bind="Config.Weights.UnusualLocation" 
+                           min="0" max="1" step="0.05" />
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Cambio de IP</label>
+                    <input type="number" class="form-control" @bind="Config.Weights.IpChange" 
+                           min="0" max="1" step="0.05" />
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Dispositivo Desconocido</label>
+                    <input type="number" class="form-control" @bind="Config.Weights.UnknownDevice" 
+                           min="0" max="1" step="0.05" />
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Horario Atípico</label>
+                    <input type="number" class="form-control" @bind="Config.Weights.AtypicalTime" 
+                           min="0" max="1" step="0.05" />
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Autenticación Débil</label>
+                    <input type="number" class="form-control" @bind="Config.Weights.WeakAuth" 
+                           min="0" max="1" step="0.05" />
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Intentos Fallidos</label>
+                    <input type="number" class="form-control" @bind="Config.Weights.FailedAttempts" 
+                           min="0" max="1" step="0.05" />
+                </div>
+            </div>
+            
+            <div class="alert alert-info mt-3">
+                <strong>Total de pesos:</strong> @Config.Weights.Total.ToString("F2")
+                @if (Math.Abs(Config.Weights.Total - 1.0) > 0.1)
+                {
+                    <span class="text-danger ms-2">?? Advertencia: Los pesos deben sumar aproximadamente 1.0</span>
+                }
+                else
+                {
+                    <span class="text-success ms-2">? Pesos correctamente balanceados</span>
+                }
+            </div>
+        </div>
+
+        <!-- Botones de acción -->
+        <div class="config-actions">
+            <button class="btn btn-primary btn-lg" @onclick="SaveConfiguration">
+                <i class="bi bi-save"></i> Guardar Configuración
+            </button>
+            <button class="btn btn-outline-secondary btn-lg" @onclick="ResetToDefaults">
+                <i class="bi bi-arrow-counterclockwise"></i> Restaurar Valores Predeterminados
+            </button>
+        </div>
+        
+        @if (_showSuccessMessage)
+        {
+            <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i>
+                <strong>¡Configuración guardada correctamente!</strong>
+                <p class="mb-0 mt-2 small">Los cambios se aplicarán en la próxima ejecución del motor de detección.</p>
+                <button type="button" class="btn-close" @onclick="() => _showSuccessMessage = false"></button>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .configuration-page {
+        padding: 2rem 0;
+    }
+
+    .page-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 0.5rem;
+    }
+
+    .config-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .config-section {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin-bottom: 2rem;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #667eea;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .form-label {
+        margin-bottom: 0.5rem;
+    }
+
+    .form-range {
+        cursor: pointer;
+    }
+
+    .config-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        margin-top: 3rem;
+    }
+
+    .btn-lg {
+        padding: 0.75rem 2rem;
+        font-size: 1.1rem;
+    }
+</style>
+
+@code {
+    private bool _showSuccessMessage = false;
+
+    private async Task SaveConfiguration()
+    {
+        // En producción, guardarías esto en la base de datos o archivo de configuración
+        _showSuccessMessage = true;
+        StateHasChanged();
+        
+        // Auto-ocultar después de 5 segundos
+        await Task.Delay(5000);
+        _showSuccessMessage = false;
+        StateHasChanged();
+    }
+
+    private void ResetToDefaults()
+    {
+        Config.HighSeverityThreshold = 70.0;
+        Config.MediumSeverityThreshold = 40.0;
+        Config.MinimumAlertThreshold = 30.0;
+        Config.ProfileLookbackDays = 30;
+        Config.MinimumAccessesForProfile = 10;
+        Config.UnusualLocationThreshold = 0.7;
+        Config.IpChangeThreshold = 0.6;
+        Config.UnknownDeviceThreshold = 0.8;
+        Config.AtypicalTimeThreshold = 0.5;
+        Config.WeakAuthThreshold = 0.6;
+        Config.FailedAttemptsCount = 3;
+        Config.FailedAttemptsWindowMinutes = 15;
+        
+        Config.Weights.UnusualLocation = 0.20;
+        Config.Weights.IpChange = 0.15;
+        Config.Weights.UnknownDevice = 0.25;
+        Config.Weights.AtypicalTime = 0.10;
+        Config.Weights.WeakAuth = 0.15;
+        Config.Weights.FailedAttempts = 0.15;
+
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <!-- Versiones centralizadas de paquetes comunes -->
+    <MicrosoftExtensionsVersion>9.0.0</MicrosoftExtensionsVersion>
+    <AzureIdentityVersion>1.17.1</AzureIdentityVersion>
+    <AzureStorageBlobsVersion>12.27.0</AzureStorageBlobsVersion>
+    <MicrosoftDataSqlClientVersion>6.1.4</MicrosoftDataSqlClientVersion>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,656 @@
+@page "/dashboard"
+@using AccessWatchLite.Domain
+@using System.Text.Json
+@rendermode InteractiveServer
+@inject AccessWatchLite.Application.Services.IAlertService AlertService
+@inject AccessWatchLite.Application.Services.IDashboardService DashboardService
+@inject NavigationManager Navigation
+
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12 mb-3">
+            <h1 class="mb-2">
+                <i class="bi bi-shield-exclamation me-2"></i>
+                Dashboard de Alertas
+            </h1>
+            <p class="text-muted mb-0">
+                Monitoreo de incidentes detectados por el motor de análisis de riesgo.
+            </p>
+        </div>
+    </div>
+
+    <!-- Estadísticas -->
+    @if (_statistics is not null)
+    {
+        <div class="row mb-4">
+            <div class="col-md-3 col-6 mb-3">
+                <div class="stat-card stat-card-primary" @onclick="LoadAllAlerts">
+                    <div class="stat-icon">
+                        <i class="bi bi-bar-chart-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h2 class="stat-number">@_statistics["Total"]</h2>
+                        <p class="stat-label">Total Alertas</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="stat-card stat-card-danger" @onclick="LoadHighAlerts">
+                    <div class="stat-icon">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h2 class="stat-number">@_statistics["High"]</h2>
+                        <p class="stat-label">Alto Riesgo</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="stat-card stat-card-warning" @onclick="LoadMediumAlerts">
+                    <div class="stat-icon">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h2 class="stat-number">@_statistics["Medium"]</h2>
+                        <p class="stat-label">Riesgo Medio</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="stat-card stat-card-success" @onclick="LoadLowAlerts">
+                    <div class="stat-icon">
+                        <i class="bi bi-info-circle-fill"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h2 class="stat-number">@_statistics["Low"]</h2>
+                        <p class="stat-label">Riesgo Bajo</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <style>
+            .stat-card {
+                background: white;
+                border-radius: 16px;
+                padding: 1.5rem;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                cursor: pointer;
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: center;
+                gap: 1.5rem;
+                border: 2px solid transparent;
+            }
+
+            .stat-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            }
+
+            .stat-card-primary:hover { border-color: #007bff; }
+            .stat-card-danger:hover { border-color: #dc3545; }
+            .stat-card-warning:hover { border-color: #ffc107; }
+            .stat-card-success:hover { border-color: #28a745; }
+
+            .stat-icon {
+                flex-shrink: 0;
+                width: 70px;
+                height: 70px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                font-size: 2.5rem;
+            }
+
+            .stat-card-primary .stat-icon {
+                background: rgba(0, 123, 255, 0.1);
+                color: #007bff;
+            }
+
+            .stat-card-danger .stat-icon {
+                background: rgba(220, 53, 69, 0.1);
+                color: #dc3545;
+            }
+
+            .stat-card-warning .stat-icon {
+                background: rgba(255, 193, 7, 0.1);
+                color: #ffc107;
+            }
+
+            .stat-card-success .stat-icon {
+                background: rgba(40, 167, 69, 0.1);
+                color: #28a745;
+            }
+
+            .stat-content {
+                flex: 1;
+            }
+
+            .stat-number {
+                font-size: 2.5rem;
+                font-weight: 700;
+                margin: 0;
+                line-height: 1;
+            }
+
+            .stat-label {
+                font-size: 0.95rem;
+                color: #6c757d;
+                margin: 0.5rem 0 0 0;
+                font-weight: 500;
+            }
+
+            @@media (max-width: 768px) {
+                .stat-card {
+                    flex-direction: column;
+                    text-align: center;
+                    gap: 1rem;
+                }
+
+                .stat-icon {
+                    width: 60px;
+                    height: 60px;
+                    font-size: 2rem;
+                }
+
+                .stat-number {
+                    font-size: 2rem;
+                }
+            }
+        </style>
+    }
+
+    <!-- Vista dividida: Últimos 5 Accesos + Alertas (solo cuando hay alertas seleccionadas) -->
+    @if (_selectedAlerts is not null)
+    {
+        <div class="row mb-4">
+            <!-- Columna Izquierda: Últimos 5 Accesos -->
+            <div class="col-md-6 mb-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">
+                            <i class="bi bi-clock-history me-2"></i>
+                            Últimos 5 Accesos
+                        </h5>
+                    </div>
+                    <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
+                        @if (_recentAccesses is not null && _recentAccesses.Any())
+                        {
+                            <div class="list-group list-group-flush">
+                                @foreach (var evt in _recentAccesses)
+                                {
+                                    <div class="list-group-item">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1">@evt.UserPrincipalName</h6>
+                                            <small class="text-muted">@evt.CreatedAt.ToString("HH:mm:ss")</small>
+                                        </div>
+                                        <p class="mb-1">
+                                            <i class="bi bi-geo-alt me-1"></i>
+                                            <span class="font-monospace small">@evt.IpAddress</span> · 
+                                            @evt.Country, @evt.City
+                                        </p>
+                                        <small class="text-muted">
+                                            @evt.ClientApp · 
+                                            <span class="badge bg-@GetResultBadgeClass(evt.Result)">@evt.Result</span>
+                                        </small>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="p-4 text-center text-muted">
+                                <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                                <p class="mt-2">No hay eventos recientes</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Columna Derecha: Alertas Seleccionadas -->
+            <div class="col-md-6 mb-3">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            @_alertsTitle
+                        </h5>
+                        @if (_selectedAlerts.Any())
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="ClearAlertSelection">
+                                <i class="bi bi-x"></i> Cerrar
+                            </button>
+                        }
+                    </div>
+                    <div class="card-body p-0" style="max-height: 600px; overflow-y: auto;">
+                        @if (_selectedAlerts.Any())
+                        {
+                            <div class="list-group list-group-flush">
+                                @foreach (var alert in _selectedAlerts)
+                                {
+                                    <div class="list-group-item list-group-item-action" style="cursor: pointer;" @onclick="() => ShowAlertDetails(alert)">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1">
+                                                <span class="badge bg-@GetSeverityBadgeClass(alert.Severity) me-2">
+                                                    @alert.Severity
+                                                </span>
+                                                Score: @alert.RiskScore.ToString("F2")
+                                            </h6>
+                                            <small class="text-muted">@alert.DetectedAt.ToString("yyyy-MM-dd HH:mm")</small>
+                                        </div>
+                                        <p class="mb-1 fw-bold">@alert.UserPrincipalName</p>
+                                        <p class="mb-1">
+                                            <i class="bi bi-geo-alt me-1"></i>
+                                            @alert.Country, @alert.City · 
+                                            <span class="font-monospace small">@alert.IpAddress</span>
+                                        </p>
+                                        <small class="text-muted">@alert.Description</small>
+                                        <div class="mt-2">
+                                            <span class="badge bg-secondary">@alert.Status</span>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="p-5 text-center text-muted">
+                                <i class="bi bi-hand-index" style="font-size: 4rem;"></i>
+                                <h5 class="mt-3">Elige las alertas</h5>
+                                <p class="mb-0">Haz clic en uno de los cuadros de estadísticas arriba para ver las alertas</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Últimos 5 Accesos (vista normal cuando NO hay alertas seleccionadas) -->
+    @if (_recentAccesses is not null && _recentAccesses.Any())
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    Últimos 5 Accesos
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Usuario</th>
+                                <th>IP</th>
+                                <th>Ubicación</th>
+                                <th>Resultado</th>
+                                <th>Fecha/Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var access in _recentAccesses)
+                            {
+                                <tr>
+                                    <td>
+                                        <div>
+                                            <strong>@access.UserPrincipalName</strong>
+                                        </div>
+                                        <small class="text-muted">@access.ClientApp</small>
+                                    </td>
+                                    <td>
+                                        <span class="font-monospace">@access.IpAddress</span>
+                                    </td>
+                                    <td>
+                                        <i class="bi bi-geo-alt me-1"></i>
+                                        @access.Country @(!string.IsNullOrEmpty(access.City) ? $", {access.City}" : "")
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-@GetResultBadgeClass(access.Result)">
+                                            @access.Result
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <small>@access.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</small>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        }
+    }
+
+    <!-- Filtros -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-funnel me-2"></i>
+                Consultar Eventos
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Tipo de Evento</label>
+                    <select class="form-select" @bind="_modeFilter">
+                        <option value="SIM">Simulación</option>
+                        <option value="REAL">Real</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Aplicación</label>
+                    <select class="form-select" @bind="_applicationFilter">
+                        <option value="">Todas</option>
+                        @foreach (var app in _availableApplications)
+                        {
+                            <option value="@app">@app</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Resultado</label>
+                    <select class="form-select" @bind="_resultFilter">
+                        <option value="">Todos</option>
+                        <option value="CORRECTO">Correcto</option>
+                        <option value="ERROR">Error</option>
+                        <option value="INDEFINIDO">Indefinido</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Fecha Desde</label>
+                    <input type="date" class="form-control" @bind="_dateFrom" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Fecha Hasta</label>
+                    <input type="date" class="form-control" @bind="_dateTo" />
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button class="btn btn-primary w-100" @onclick="RequestEvents">
+                        <i class="bi bi-search me-2"></i>
+                        Solicitar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    @if (_isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <p class="text-muted mt-3">Cargando eventos...</p>
+        </div>
+    }
+    else if (_eventsRequested && _filteredEvents is not null && _filteredEvents.Any())
+    {
+        <!-- Lista de eventos -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ul me-2"></i>
+                    Eventos de Acceso (@_filteredEvents.Count registros)
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Aplicación</th>
+                                <th>IP / Ubicación</th>
+                                <th>Dispositivo</th>
+                                <th>Resultado</th>
+                                <th>Fecha/Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var evt in _filteredEvents)
+                            {
+                                <tr>
+                                    <td>
+                                        <div>
+                                            <strong>@evt.UserPrincipalName</strong>
+                                        </div>
+                                        <small class="text-muted">@evt.UserId</small>
+                                    </td>
+                                    <td>
+                                        <div>@evt.ClientApp</div>
+                                        @if (!string.IsNullOrEmpty(evt.ClientResource))
+                                        {
+                                            <small class="text-muted">? @evt.ClientResource</small>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="font-monospace small">@evt.IpAddress</div>
+                                        <small class="text-muted">
+                                            <i class="bi bi-geo-alt me-1"></i>
+                                            @evt.Country @(!string.IsNullOrEmpty(evt.City) ? $", {evt.City}" : "")
+                                        </small>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(evt.DeviceName))
+                                        {
+                                            <div>@evt.DeviceName</div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(evt.DeviceId))
+                                        {
+                                            <small class="text-muted font-monospace">@evt.DeviceId.Substring(0, Math.Min(8, evt.DeviceId.Length))...</small>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-@GetResultBadgeClass(evt.Result)">
+                                            @evt.Result
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <small>@evt.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</small>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+    else if (_eventsRequested && !_isLoading)
+    {
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            No se encontraron eventos con los filtros aplicados.
+        </div>
+    }
+    else if (!_eventsRequested && !_isLoading)
+    {
+        <div class="alert alert-secondary text-center py-4">
+            <i class="bi bi-funnel-fill me-2" style="font-size: 2rem;"></i>
+            <p class="mb-0">Selecciona los filtros y presiona <strong>"Solicitar"</strong> para consultar eventos.</p>
+        </div>
+    }
+</div>
+
+@code {
+private List<AccessEvent>? _allEvents;
+private List<AccessEvent>? _filteredEvents;
+private Dictionary<string, int>? _statistics;
+private List<AccessEvent>? _recentAccesses;
+private List<Alert>? _selectedAlerts;
+private string _alertsTitle = "Alertas";
+private bool _isLoading = false;
+private bool _eventsRequested = false;
+    
+private string _applicationFilter = "";
+private string _resultFilter = "";
+private string _modeFilter = "REAL"; // Default: Real
+private DateTime? _dateFrom = null;
+private DateTime? _dateTo = null;
+private List<string> _availableApplications = new();
+    
+// Constantes para evitar problemas con comillas en lambdas
+private const string StatusInvestigating = "Investigating";
+private const string StatusResolved = "Resolved";
+private const string StatusFalsePositive = "FalsePositive";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInitialData();
+    }
+
+    private async Task LoadInitialData()
+    {
+        try
+        {
+            // Estadísticas y últimos accesos siempre de REAL
+            _statistics = await AlertService.GetAlertStatisticsAsync(isSimulation: false);
+            _recentAccesses = await DashboardService.GetRecentAccessesAsync(isSimulation: false, count: 5);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading initial data: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAllAlerts()
+    {
+        try
+        {
+            _selectedAlerts = await AlertService.GetRecentAlertsAsync(isSimulation: false, count: 50);
+            _alertsTitle = $"Todas las Alertas ({_selectedAlerts.Count})";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading all alerts: {ex.Message}");
+            _selectedAlerts = new List<Alert>();
+        }
+    }
+
+    private async Task LoadAlertsBySeverity(string severity)
+    {
+        try
+        {
+            var allAlerts = await AlertService.GetRecentAlertsAsync(isSimulation: false, count: 100);
+            _selectedAlerts = allAlerts.Where(a => a.Severity == severity).ToList();
+            
+            var severityText = severity switch
+            {
+                "High" => "?? Alto Riesgo",
+                "Medium" => "?? Riesgo Medio",
+                "Low" => "?? Riesgo Bajo",
+                _ => severity
+            };
+            
+            _alertsTitle = $"Alertas de {severityText} ({_selectedAlerts.Count})";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading alerts by severity: {ex.Message}");
+            _selectedAlerts = new List<Alert>();
+        }
+    }
+
+    private Task LoadHighAlerts() => LoadAlertsBySeverity("High");
+    private Task LoadMediumAlerts() => LoadAlertsBySeverity("Medium");
+    private Task LoadLowAlerts() => LoadAlertsBySeverity("Low");
+
+    private void ClearAlertSelection()
+    {
+        _selectedAlerts = null;
+        StateHasChanged();
+    }
+
+    private void ShowAlertDetails(Alert alert)
+    {
+        // TODO: Navegar a página de detalles de alerta
+        // Navigation.NavigateTo($"/alerts/{alert.Id}");
+        Console.WriteLine($"Alert clicked: {alert.Id} - {alert.Title}");
+    }
+
+    private string GetSeverityBadgeClass(string severity) => severity switch
+    {
+        "High" => "danger",
+        "Medium" => "warning",
+        "Low" => "success",
+        _ => "secondary"
+    };
+
+    private async Task RequestEvents()
+    {
+        _isLoading = true;
+        _eventsRequested = true;
+        StateHasChanged();
+
+        try
+        {
+            bool isSimulation = _modeFilter == "SIM";
+            
+            _allEvents = await DashboardService.GetAccessEventsAsync(isSimulation, 200);
+            
+            // Obtener lista de aplicaciones únicas para el filtro
+            _availableApplications = _allEvents
+                .Where(e => !string.IsNullOrEmpty(e.ClientApp))
+                .Select(e => e.ClientApp!)
+                .Distinct()
+                .OrderBy(a => a)
+                .ToList();
+            
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading events: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+private void ApplyFilters()
+{
+    _filteredEvents = _allEvents?
+        .Where(e => string.IsNullOrEmpty(_applicationFilter) || e.ClientApp == _applicationFilter)
+        .Where(e => string.IsNullOrEmpty(_resultFilter) || e.Result == _resultFilter)
+        .Where(e => !_dateFrom.HasValue || e.CreatedAt.Date >= _dateFrom.Value.Date)
+        .Where(e => !_dateTo.HasValue || e.CreatedAt.Date <= _dateTo.Value.Date)
+        .ToList();
+}
+
+private void FilterByApplication(string application)
+{
+    _applicationFilter = application;
+    if (_eventsRequested)
+    {
+        ApplyFilters();
+    }
+}
+
+private void FilterByResult(string result)
+{
+    _resultFilter = result;
+    if (_eventsRequested)
+    {
+        ApplyFilters();
+    }
+}
+
+    private string GetResultBadgeClass(string? result) => result switch
+    {
+        "CORRECTO" => "success",
+        "ERROR" => "danger",
+        _ => "warning"
+    };
+}
